@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>100m Geofenced Google Form</title>
+
+<style>
+    body {
+        background: #000;
+        color: #fff;
+        font-family: Arial, sans-serif;
+        text-align: center;
+        padding: 20px;
+    }
+
+    #message {
+        font-size: 20px;
+        font-weight: bold;
+        margin-top: 15px;
+    }
+
+    #distance {
+        font-size: 18px;
+        margin-top: 10px;
+        color: #00d9ff;
+    }
+
+    #circle {
+        width: 180px;
+        height: 180px;
+        border-radius: 50%;
+        background: #222;
+        margin: 20px auto;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        border: 4px solid #444;
+        font-size: 32px;
+        font-weight: bold;
+    }
+
+    #formContainer iframe {
+        width: 100%;
+        height: 620px;
+        border: 1px solid #444;
+        border-radius: 8px;
+        margin-top: 15px;
+    }
+
+    #retryBtn {
+        background: #444;
+        color: #fff;
+        border: none;
+        padding: 12px 20px;
+        font-size: 18px;
+        border-radius: 6px;
+        margin-top: 10px;
+        display: none;
+    }
+</style>
+</head>
+<body>
+
+<h2>Location Verification</h2>
+
+<div id="circle">0m</div>
+
+<p id="message">Checking your location…</p>
+<p id="distance"></p>
+
+<button id="retryBtn">Retry GPS</button>
+
+<div id="formContainer" style="display:none;">
+    <iframe 
+        src="https://docs.google.com/forms/d/e/1FAIpQLSeLi6rBSMcIp0b08-YIJM3RdP7TPjgnjR15RLnzTji1Vg9a_A/viewform?usp=header">
+    </iframe>
+</div>
+
+<script>
+/* CONFIG */
+const ALLOWED_LAT = 25.144911;
+const ALLOWED_LNG = 75.862353;
+const ALLOWED_RADIUS = 100; // 100 meters
+
+/* ELEMENTS */
+const msg = document.getElementById("message");
+const dist = document.getElementById("distance");
+const circle = document.getElementById("circle");
+const retryBtn = document.getElementById("retryBtn");
+const formContainer = document.getElementById("formContainer");
+
+/* SIREN SOUND */
+const siren = new Audio("https://www.soundjay.com/misc/sounds/siren-whistle-01.mp3");
+siren.volume = 1.0;
+
+let inside = false; // track entry/exit
+
+/* HAVERSINE CALCULATION */
+function distance(lat1, lon1, lat2, lon2) {
+    const R = 6371000;
+    const dLat = (lat2 - lat1) * Math.PI/180;
+    const dLon = (lon2 - lon1) * Math.PI/180;
+    const a = Math.sin(dLat/2)**2 +
+              Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180) *
+              Math.sin(dLon/2)**2;
+    return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+}
+
+/* HANDLE POSITION UPDATE */
+function updatePosition(pos) {
+    const ulat = pos.coords.latitude;
+    const ulng = pos.coords.longitude;
+    const d = distance(ulat, ulng, ALLOWED_LAT, ALLOWED_LNG);
+
+    const smooth = Math.round(d);
+    circle.textContent = smooth + "m";
+    dist.textContent = `Distance from required location: ${smooth} meters`;
+
+    /* INSIDE GEOFENCE */
+    if (smooth <= ALLOWED_RADIUS) {
+        msg.textContent = "You are inside the allowed area ✔";
+        circle.style.borderColor = "lime";
+        circle.style.color = "lime";
+
+        formContainer.style.display = "block";
+
+        if (!inside) inside = true;
+    } 
+    
+    /* OUTSIDE GEOFENCE */
+    else {
+        msg.textContent = "You are OUTSIDE the allowed area ❌";
+        circle.style.borderColor = "red";
+        circle.style.color = "red";
+
+        formContainer.style.display = "none";
+
+        /* PLAY SIREN ONLY WHEN EXITING */
+        if (inside) {
+            siren.currentTime = 0;
+            siren.play().catch(()=>{});
+        }
+        inside = false;
+    }
+}
+
+/* GPS ERROR HANDLING */
+function gpsError(err) {
+    msg.textContent = "Location unavailable. Please enable GPS.";
+    retryBtn.style.display = "block";
+}
+
+/* START GPS TRACKING */
+function startGPS() {
+    msg.textContent = "Getting location...";
+    retryBtn.style.display = "none";
+
+    navigator.geolocation.getCurrentPosition(updatePosition, gpsError, {
+        enableHighAccuracy: true,
+        timeout: 7000,
+        maximumAge: 0
+    });
+
+    navigator.geolocation.watchPosition(updatePosition, gpsError, {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0
+    });
+
+    /* AUTO-RETRY EVERY 3s */
+    setInterval(() => {
+        navigator.geolocation.getCurrentPosition(updatePosition, gpsError, {
+            enableHighAccuracy: true,
+            timeout: 5000,
+            maximumAge: 0
+        });
+    }, 3000);
+}
+
+retryBtn.onclick = startGPS;
+
+startGPS();
+</script>
+
+</body>
+</html>
